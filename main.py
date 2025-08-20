@@ -11,7 +11,7 @@ from procesamiento.utils import (
 )
 from procesamiento.db import conectar_sql_server
 from procesamiento.procesamiento import procesar_fila
-from telegram.telegram_bot import enviar_mensaje, formato_log  # Ajusta la ruta si es necesario
+from telegram.telegram_bot import enviar_mensaje, formato_log
 
 def descargar_archivo_desde_outlook():
     outlook = OutlookClient()
@@ -54,14 +54,17 @@ def procesar_archivo(ruta_archivo, enviar_log_telegram=True):
 
     if enviar_log_telegram:
         enviar_mensaje(formato_log(f"✅ <b>{nombre_archivo}</b> cargado correctamente en la base de datos."))
-
 def main():
-    modo = "masivo"  # Cambiar a "individual" si se desea solo 1 archivo
+    # opciones: "masivo", "individual_outlook", "individual_fecha"
+    modo = "individual_fecha"  
+    fecha_manual = "2025-08-19"  # 👈 solo se usa en modo individual_fecha
+
     inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     enviar_mensaje(formato_log(f"🚀 Inicio del proceso\n🕒 Fecha y hora: <b>{inicio}</b>\n⚙️ Modo: <b>{modo}</b>"))
 
     try:
-        if modo == "individual":
+        if modo == "individual_outlook":
+            # === FLUJO ORIGINAL ===
             if descargar_archivo_desde_outlook():
                 archivo = obtener_archivo_del_dia(ATTACHMENT_DOWNLOAD_PATH)
                 if archivo:
@@ -72,7 +75,19 @@ def main():
             else:
                 enviar_mensaje(formato_log("⛔ No se descargó ningún archivo. Proceso cancelado."))
         
+        elif modo == "individual_fecha":
+            # === NUEVO FLUJO ===
+            nombre_esperado = f"Reporte_Impresoras_{fecha_manual}.csv"
+            ruta_archivo = os.path.join(ATTACHMENT_DOWNLOAD_PATH, nombre_esperado)
+
+            if os.path.exists(ruta_archivo):
+                enviar_mensaje(formato_log(f"📎 Archivo detectado manualmente: <code>{os.path.basename(ruta_archivo)}</code>"))
+                procesar_archivo(ruta_archivo)
+            else:
+                enviar_mensaje(formato_log(f"⚠️ No se encontró el archivo con la fecha {fecha_manual}."))
+
         elif modo == "masivo":
+            # === FLUJO MASIVO IGUAL ===
             archivos = listar_archivos_validos(ATTACHMENT_DOWNLOAD_PATH)
             total = len(archivos)
 
@@ -80,29 +95,25 @@ def main():
                 enviar_mensaje(formato_log("⚠️ No se encontraron archivos válidos en la carpeta."))
                 return
 
-            # Mostrar hasta 5 archivos como vista previa
             archivos_mostrados = archivos[:5]
             lista_resumen = "\n".join([f"• <code>{os.path.basename(a)}</code>" for a in archivos_mostrados])
             resumen = f"📦 Archivos detectados: <b>{total}</b>\n{lista_resumen}"
-
             if total > 5:
                 resumen += f"\n... y <b>{total - 5}</b> más."
 
             enviar_mensaje(formato_log(resumen))
-
-            # ⏳ Indicar que empieza el procesamiento
             enviar_mensaje(formato_log("⏳ Procesando archivos, esto puede tardar unos minutos. Por favor espera..."))
 
             for archivo in archivos:
                 try:
-                    procesar_archivo(archivo, enviar_log_telegram=False)  # Evita spam en masivo
+                    procesar_archivo(archivo, enviar_log_telegram=False)
                 except Exception as e:
                     enviar_mensaje(formato_log(f"❌ Error procesando <code>{os.path.basename(archivo)}</code>:\n<code>{str(e)}</code>"))
 
             enviar_mensaje(formato_log("✅ <b>Proceso masivo finalizado correctamente.</b>"))
 
         else:
-            enviar_mensaje(formato_log("❌ Modo inválido. Usa 'individual' o 'masivo'."))
+            enviar_mensaje(formato_log("❌ Modo inválido. Usa 'individual_outlook', 'individual_fecha' o 'masivo'."))
             return
 
     except Exception as e:
